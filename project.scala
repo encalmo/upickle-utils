@@ -2,8 +2,6 @@
 //> using exclude scripts
 //> using toolkit 0.7.0
 //> using test.dep org.scalameta::munit:1.1.0
-//> using option -Xmax-inlines 128
-//> using option -experimental
 //> using publish.organization "org.encalmo"
 //> using publish.name "upickle-utils"
 //> using publish.url "https://github.com/encalmo/upickle-utils"
