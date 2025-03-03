@@ -1,4 +1,4 @@
-//> using scala 3.6.3
+//> using scala 3.3.5
 //> using exclude scripts
 //> using toolkit 0.7.0
 //> using test.dep org.scalameta::munit:1.1.0
