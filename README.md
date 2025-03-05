@@ -1,3 +1,5 @@
+![Maven Central Version](https://img.shields.io/maven-central/v/org.encalmo/upickle-utils_3?style=for-the-badge)
+
 # upickle-utils
 
 This Scala 3 library provides set of extensions to the [upickle](https://github.com/com-lihaoyi/upickle) library provided with [Scala toolkit](https://docs.scala-lang.org/toolkit/introduction.html).
