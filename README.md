@@ -8,11 +8,11 @@ This Scala 3 library provides set of extensions to the [upickle](https://github.
 
 Use with SBT
 
-    libraryDependencies += "org.encalmo" %% "upickle-utils" % "0.9.3"
+    libraryDependencies += "org.encalmo" %% "upickle-utils" % "0.9.4"
 
 or with SCALA-CLI
 
-    //> using dep org.encalmo::upickle-utils:0.9.3
+    //> using dep org.encalmo::upickle-utils:0.9.4
 
 ## Examples
 
