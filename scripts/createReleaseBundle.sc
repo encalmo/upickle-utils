@@ -1,16 +1,24 @@
 #!/usr/bin/env -S scala-cli shebang --quiet
 
-//> using scala 3.5.2
+//> using scala 3.6.3
 //> using jvm 21
 //> using toolkit 0.7.0
+//> using dep org.encalmo::script-utils:0.9.0
 
 import java.nio.file.Path
 import scala.io.AnsiColor.*
+import org.encalmo.utils.CommandLineUtils.*
+import sttp.client4.*
+import sttp.model.Uri
 
-val version = getArg("version")
-val secretKeyPassword = maybeArg("secret-key-password")
-val maybeGpgKey = maybeArg("gpg-key")
-val maybeSecretKey = maybeArg("secret-key")
+val version = requiredScriptParameter("version")(args)
+val secretKeyPassword = optionalScriptParameter("secret-key-password")(args)
+val maybeGpgKey = optionalScriptParameter("gpg-key")(args)
+val maybeSecretKey = optionalScriptParameter("secret-key")(args)
+val publishScalaJs = optionalScriptFlag("js")(args)
+val publishScalaNative = optionalScriptFlag("native")(args)
+val uploadToSonatypeCentral = optionalScriptFlag("upload-to-sonatype-central")(args)
+val sonatypeToken = optionalScriptParameter("sonatype-token")(args)
 
 val signer = maybeGpgKey match {
   case Some(key) => s"""--signer gpg --gpg-key $key"""
@@ -58,49 +66,90 @@ call(
   println
 )
 
-println(s"${GREEN}Publishing package locally ...${RESET}")
-
-val command =
+val scalaJvmCommand =
   s"""scala-cli --power publish local . --organization $organization --name $name --project-version $version $signer --suppress-deprecated-warnings --suppress-experimental-feature-warning --suppress-directives-in-multiple-files-warning --suppress-deprecated-feature-warning"""
 
-val (publishedFolder, coordinates) = {
-  val ivyLocation = call(command).last.trim()
-  val coordinates = {
-    ivyLocation.drop(ivyLocation.indexOf(organization)).split("/")
-  }
-  (
-    if (ivyLocation.startsWith("~" + java.io.File.separator))
-    then os.Path(java.io.File(System.getProperty("user.home") + ivyLocation.substring(1)))
-    else os.Path(java.io.File(ivyLocation).getAbsoluteFile()),
-    coordinates
-  )
+publishUsing(scalaJvmCommand)
+
+if (publishScalaJs) then {
+  val scalaJsCommand =
+    s"""scala-cli --power publish local --js . --organization $organization --name $name --project-version $version $signer --suppress-deprecated-warnings --suppress-experimental-feature-warning --suppress-directives-in-multiple-files-warning --suppress-deprecated-feature-warning"""
+
+  publishUsing(scalaJsCommand)
 }
 
-val artefactName = coordinates.dropRight(1).last
+if (publishScalaNative) then {
+  val scalaNativeCommand =
+    s"""scala-cli --power publish local --native . --organization $organization --name $name --project-version $version $signer --suppress-deprecated-warnings --suppress-experimental-feature-warning --suppress-directives-in-multiple-files-warning --suppress-deprecated-feature-warning"""
 
-println(s"${GREEN}Published ${coordinates.mkString(":")} to $publishedFolder${RESET}")
+  publishUsing(scalaNativeCommand)
+}
 
-val tempDir = os.temp.dir(prefix = s"sonatype-deployment-package-")
-val bundleFolderPath = tempDir / toFolderPath(coordinates)
-os.makeDir.all(bundleFolderPath)
+// --- UTILS ---
 
-println(s"${GREEN}Preparing sonatype bundle in ${bundleFolderPath} ...${RESET}")
+def publishUsing(command: String) = {
 
-copyPublishedFiles("poms")
-copyPublishedFiles("jars")
-copyPublishedFiles("srcs")
-copyPublishedFiles("docs")
+  println(s"${GREEN}Publishing package locally ...${RESET}")
 
-val bundleFilePath = os.pwd / "bundle.zip"
+  val (publishedFolder, coordinates) = {
+    val ivyLocation = call(command).last.trim()
+    val coordinates = {
+      ivyLocation.drop(ivyLocation.indexOf(organization)).split("/")
+    }
+    (
+      if (ivyLocation.startsWith("~" + java.io.File.separator))
+      then os.Path(java.io.File(System.getProperty("user.home") + ivyLocation.substring(1)))
+      else os.Path(java.io.File(ivyLocation).getAbsoluteFile()),
+      coordinates
+    )
+  }
 
-println(s"${GREEN}Creating bundle archive ...${RESET}")
-val bundleArchivePath = tempDir / "bundle.zip"
-call(s"zip -r bundle.zip ${bundleFolderPath.relativeTo(tempDir)}", cwd = tempDir).foreach(println)
-call(s"ls -l $bundleArchivePath").foreach(println)
-call(s"mv bundle.zip $bundleFilePath", cwd = tempDir).foreach(println)
-println(s"${GREEN}Bundle archive ready at $bundleFilePath${RESET}")
+  val artefactName = coordinates.dropRight(1).last
 
-// ---------- UTILS ----------
+  println(s"${GREEN}Published ${coordinates.mkString(":")} to $publishedFolder${RESET}")
+
+  val tempDir = os.temp.dir(prefix = s"sonatype-deployment-package-")
+  val bundleFolderPath = tempDir / toFolderPath(coordinates)
+  os.makeDir.all(bundleFolderPath)
+
+  val bundleFileName = s"${artefactName}-${version}.zip"
+
+  println(s"${GREEN}Preparing sonatype bundle in ${bundleFolderPath} ...${RESET}")
+
+  copyPublishedFiles(publishedFolder, "poms", artefactName, bundleFolderPath)
+  copyPublishedFiles(publishedFolder, "jars", artefactName, bundleFolderPath)
+  copyPublishedFiles(publishedFolder, "srcs", artefactName, bundleFolderPath)
+  copyPublishedFiles(publishedFolder, "docs", artefactName, bundleFolderPath)
+
+  val bundleFilePath = os.pwd / s"$bundleFileName"
+
+  println(s"${GREEN}Creating bundle archive ...${RESET}")
+  val bundleArchivePath = tempDir / s"$bundleFileName"
+  call(s"zip -r $bundleFileName ${bundleFolderPath.relativeTo(tempDir)}", cwd = tempDir).foreach(println)
+  call(s"ls -l $bundleArchivePath").foreach(println)
+  call(s"mv $bundleFileName $bundleFilePath", cwd = tempDir).foreach(println)
+  println(s"${GREEN}Bundle archive ready at $bundleFilePath${RESET}")
+
+  if (uploadToSonatypeCentral && sonatypeToken.isDefined) then {
+    println(s"${GREEN}Uploading ${bundleFileName} to Sonatype Central ...${RESET}")
+
+    val response = basicRequest
+      .response(asStringAlways)
+      .post(Uri.unsafeParse("https://central.sonatype.com/api/v1/publisher/upload?publishingType=AUTOMATIC"))
+      .header("Authorization", s"Bearer ${sonatypeToken.get}")
+      .multipartBody(
+        multipartFile("bundle", new java.io.File(bundleFilePath.toString())).fileName(bundleFileName)
+      )
+      .send(quick.backend)
+    if (response.code.isSuccess)
+    then println(s"${GREEN}Uploaded successfully.${RESET}")
+    else {
+      println(s"${RED_B}${WHITE}Upload failed with ${response.code.code} ${response.body}${RESET}")
+      System.exit(2)
+    }
+  }
+
+}
 
 def call(command: String, cwd: os.Path = os.pwd): Seq[String] =
   println(s"${BLUE}command: ${command}${RESET}")
@@ -118,7 +167,7 @@ def call(command: String, cwd: os.Path = os.pwd): Seq[String] =
 def toFolderPath(coordinates: Array[String]): os.RelPath =
   os.RelPath(coordinates(0).split("\\.") ++ coordinates.drop(1), 0)
 
-def copyPublishedFiles(folder: String) = {
+def copyPublishedFiles(publishedFolder: os.Path, folder: String, artefactName: String, bundleFolderPath: os.Path) = {
   os.list(publishedFolder / folder)
     .foreach { path =>
       val targetName = path.last.replace(artefactName, s"$artefactName-$version")
@@ -126,17 +175,3 @@ def copyPublishedFiles(folder: String) = {
       os.copy(from = path, to = bundleFolderPath / targetName)
     }
 }
-
-def getArg(key: String): String =
-  maybeArg(key).getOrElse {
-    println(s"${WHITE}${RED_B}Missing parameter $key${RESET}")
-    System.exit(2)
-    ""
-  }
-
-def maybeArg(key: String): Option[String] =
-  val prefix = s"--$key="
-  args
-    .filter(_.startsWith(prefix))
-    .headOption
-    .map(_.drop(prefix.length()))
