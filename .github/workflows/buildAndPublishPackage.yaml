@@ -36,7 +36,7 @@ jobs:
 
       - id: release
         name: Create and upload release bundles
-        uses: encalmo/create-new-release-action@6726c1d
+        uses: encalmo/create-new-release-action@v1.0.1
         with:
           tag-prefix: '${{ inputs.tag-prefix }}-'
           version-bump: ${{ inputs.version-bump }}
