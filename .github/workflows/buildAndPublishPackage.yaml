@@ -28,6 +28,10 @@ jobs:
   buildAndPublishPackage:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
       - name: Setup gpg
         id: gpg
         run: |
@@ -35,7 +39,7 @@ jobs:
           gpg -K
 
       - id: release
-        name: Create and upload release bundles
+        name: Create and upload new release bundles
         uses: encalmo/create-new-release-action@v1.0.1
         with:
           tag-prefix: '${{ inputs.tag-prefix }}-'
