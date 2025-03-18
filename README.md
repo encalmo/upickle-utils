@@ -4,6 +4,8 @@
 
 This Scala 3 library provides set of extensions to the [upickle](https://github.com/com-lihaoyi/upickle) library provided with [Scala toolkit](https://docs.scala-lang.org/toolkit/introduction.html).
 
+## Dependencies
+
 ## Usage
 
 Use with SBT
